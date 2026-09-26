@@ -1,7 +1,7 @@
 /* Ported from the Claude Design prototype (d-scene.js); logic kept intact, wired as an ES module. */
 import * as THREE from 'three';
-import { ACTION_LABEL, DEPT, DEPTS, H, META, OPS, applyConfig, reduced } from '../core/runtime.js';
-import { adapter } from '../core/adapter.js';
+import { ACTION_LABEL, DEPT, DEPTS, H, META, OPS, applyConfig, reduced } from '../core/runtime.ts';
+import { adapter } from '../core/adapter.ts';
 import { $, UI } from './ui.js';
 
 /* ============ store (UI copy — mutated only by adapter events) ============ */

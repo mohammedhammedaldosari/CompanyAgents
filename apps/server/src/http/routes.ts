@@ -126,7 +126,11 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     mime: z.string().max(100).optional(), dataBase64: z.string().min(1), kind: z.enum(['upload', 'bank', 'rates']).optional(), note: z.string().max(500).optional() }), req.body)));
   app.get('/api/files/:id/download', async (req, reply) => {
     const f = await files.downloadFile(ctx.db, P(req).id!);
-    reply.header('content-type', f.mime).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`);
+    // owner-uploaded bytes are never rendered on our origin: only inert types keep their mime, the rest download as binary
+    const safe = /^(text\/(csv|plain)|application\/(pdf|json)|image\/(png|jpeg|gif|webp))$/.test(f.mime);
+    reply.header('content-type', safe ? f.mime : 'application/octet-stream')
+      .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`)
+      .header('content-security-policy', "default-src 'none'; sandbox");
     return reply.send(f.data);
   });
   app.delete('/api/files/:id', async req => { await files.deleteFile(ctx, P(req).id!); return { ok: true }; });

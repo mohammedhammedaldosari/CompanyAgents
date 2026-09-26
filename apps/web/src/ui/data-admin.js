@@ -1,6 +1,6 @@
 /* Admin additions for the live platform: owner data (files, bank statements, manual card metrics),
    the tool-call audit trail (spec §20), and account security. Extends the ported admin console. */
-import { DEPT, H, META, OPS, ACTION_LABEL } from '../core/runtime.js';
+import { DEPT, H, META, OPS, ACTION_LABEL } from '../core/runtime.ts';
 import { ADM_TABS } from './admin.js';
 import { $, E, UI, call } from './ui.js';
 import { store } from './scene.js';

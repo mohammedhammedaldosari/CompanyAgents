@@ -1,5 +1,5 @@
 /* Ported from the Claude Design prototype (g-admin.js); logic kept intact, wired as an ES module. */
-import { ACTION_LABEL, AGENT_DEPT, CONFIG, CONN_LABEL, DEFAULT_INSTR, DEPT, DEPTS, FREQ_LABEL, H, MAX_AGENTS, META, METHOD, MODEL_COST, MODEL_LABEL, ON_CAP_LABEL, OPS, POLICIES, STAGE, STATUS_LABEL, TOOL, TOOLS, clone, diffConfig, margin, toolIcon, validateConfig } from '../core/runtime.js';
+import { ACTION_LABEL, AGENT_DEPT, CONFIG, CONN_LABEL, DEFAULT_INSTR, DEPT, DEPTS, FREQ_LABEL, H, MAX_AGENTS, META, METHOD, MODEL_COST, MODEL_LABEL, ON_CAP_LABEL, OPS, POLICIES, STAGE, STATUS_LABEL, TOOL, TOOLS, clone, diffConfig, margin, toolIcon, validateConfig } from '../core/runtime.ts';
 import { policyOf, prodById, store, tasksArr } from './scene.js';
 import { $, E, UI, call, prefs, savePrefs, toLocalInput } from './ui.js';
 

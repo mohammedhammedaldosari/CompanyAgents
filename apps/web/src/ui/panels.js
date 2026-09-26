@@ -1,6 +1,6 @@
 /* Ported from the Claude Design prototype (f-panels.js); logic kept intact, wired as an ES module. */
-import { ACTION_LABEL, CONFIG, CONN_LABEL, DEPT, DEPTS, FREQ_LABEL, H, LVL_LABEL, META, METHOD, MODEL_LABEL, OPS, SETTINGS, STAGE, STAGES, STATUS_LABEL, TOOL, cover, margin } from '../core/runtime.js';
-import { adapter, auth } from '../core/adapter.js';
+import { ACTION_LABEL, CONFIG, CONN_LABEL, DEPT, DEPTS, FREQ_LABEL, H, LVL_LABEL, META, METHOD, MODEL_LABEL, OPS, SETTINGS, STAGE, STAGES, STATUS_LABEL, TOOL, cover, margin } from '../core/runtime.ts';
+import { adapter, auth } from '../core/adapter.ts';
 import { Overlay, Scene, Viz, activeAlerts, applySnapshot, approvalReason, onEvent, policyOf, prodById, store, tasksArr, valueDesc } from './scene.js';
 import { $, E, UI, call, prefs, savePrefs } from './ui.js';
 import { wireAdmin } from './admin.js';

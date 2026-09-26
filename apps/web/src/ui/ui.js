@@ -1,6 +1,6 @@
 /* Ported from the Claude Design prototype (e-ui.js); logic kept intact, wired as an ES module. */
-import { AGENT_META, CONFIG, CONN_LABEL, CORE_TOOLS, DEPT, DEPTS, H, LVL_LABEL, META, OPS, QUESTIONS, SETTINGS, STATUS_LABEL, TOOL, margin, toolIcon } from '../core/runtime.js';
-import { adapter } from '../core/adapter.js';
+import { AGENT_META, CONFIG, CONN_LABEL, CORE_TOOLS, DEPT, DEPTS, H, LVL_LABEL, META, OPS, QUESTIONS, SETTINGS, STATUS_LABEL, TOOL, margin, toolIcon } from '../core/runtime.ts';
+import { adapter, hooks } from '../core/adapter.ts';
 import { Overlay, Scene, activeAlerts, busyAgents, deptStats, prodById, store, tasksArr } from './scene.js';
 
 /* ============ UI ============ */
@@ -145,5 +145,8 @@ const UI={focus:null,layer:null,hot:null,filter:'all',agentFilter:null,showN:60,
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(s,null,2)],{type:'application/json'}));a.download='agents-company-'+H.dayKey(Date.now())+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);this.toast('صُدّرت البيانات');}
 };
 function toLocalInput(d){return `${d.getFullYear()}-${H.pad(d.getMonth()+1)}-${H.pad(d.getDate())}T${H.pad(d.getHours())}:${H.pad(d.getMinutes())}`;}
+
+// the adapter reports failures through the UI's toast
+hooks.toast=m=>UI.toast(m);
 
 export { $, PREF_KEY, prefs, savePrefs, E, call, UI, toLocalInput };

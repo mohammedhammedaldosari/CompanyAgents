@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "echo web: plain ES modules, no typecheck step yet",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "echo 'web: covered by e2e (apps/web/e2e)'",
     "e2e": "node e2e/smoke.mjs"
   },
