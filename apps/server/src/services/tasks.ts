@@ -197,6 +197,7 @@ export async function approve(ctx: Ctx, id: string): Promise<void> {
       return;
     }
     // task-level approval of a draft: apply the effect implied by the task itself
+    await tx.query(`update task_runs set status = 'done', finished_at = now() where task_id = $1 and status = 'waiting'`, [t.id]);
     const note = await applyApprovedEffect(ctx, tx, t);
     await completeTask(ctx, tx, t, { summary: note || t.result?.summary || `اكتملت «${t.title}»`, document: t.artifact?.body ?? null }, true);
   });
@@ -224,6 +225,7 @@ export async function reject(ctx: Ctx, id: string): Promise<void> {
     if (t.status === 'done' || t.status === 'cancelled') throw bad('المهمة منتهية');
     await tx.query(`update tool_calls set status = 'rejected', approved_by = 'المالك', approved_at = now() where task_id = $1 and status = 'pending_approval'`, [t.id]);
     t.status = 'cancelled'; t.doneAt = Date.now(); t.pendingCall = null;
+    await tx.query(`update task_runs set status = 'aborted', finished_at = now() where task_id = $1 and status in ('waiting','running')`, [t.id]);
     await saveTask(tx, t); emitTask(tx, t);
     await act(tx, t.dept, t.agent, 'cancel', `أُلغي «${t.title}» برفضك`);
     await audit(tx, 'الموافقات', 'رفض', t.title);
@@ -238,6 +240,7 @@ export async function cancelTask(ctx: Ctx, id: string): Promise<void> {
     if (t.status === 'done' || t.status === 'cancelled') return;
     await tx.query(`update tool_calls set status = 'rejected' where task_id = $1 and status = 'pending_approval'`, [t.id]);
     t.status = 'cancelled'; t.doneAt = Date.now(); t.pendingCall = null; t.routing = null;
+    await tx.query(`update task_runs set status = 'aborted', finished_at = now() where task_id = $1 and status in ('waiting','running')`, [t.id]);
     await saveTask(tx, t); emitTask(tx, t);
     await act(tx, t.dept, t.agent, 'cancel', `أُلغي «${t.title}»`);
     await audit(tx, 'المهام', 'إلغاء', t.title);
@@ -292,7 +295,7 @@ export async function reassignOpen(ctx: Ctx, from: string, to: string): Promise<
 
 /* ---------- used by the executor ---------- */
 
-export async function markFailed(ctx: Ctx, id: string, err: string): Promise<void> {
+export async function markFailed(ctx: Ctx, id: string, err: string, opts: { configError?: boolean } = {}): Promise<void> {
   const { mkAlert } = await import('./common.js');
   await ctx.db.tx(async tx => {
     const t = await getTask(tx, id, true);
@@ -300,7 +303,8 @@ export async function markFailed(ctx: Ctx, id: string, err: string): Promise<voi
     t.status = 'backlog'; t.progress = 0; t.result = { summary: `فشل التنفيذ: ${err}`.slice(0, 500) };
     await saveTask(tx, t); emitTask(tx, t);
     const org = ctx.org();
-    await mkAlert(tx, { level: 'warning', dept: 'tech', agent: org.manager('tech'), title: `فشل تنفيذ «${t.title}»`, detail: err.slice(0, 500) });
+    if (opts.configError) await mkAlert(tx, { level: 'critical', dept: 'tech', agent: org.manager('tech'), title: 'لا يمكن تشغيل الوكلاء: إعداد الخادم ناقص', detail: err.slice(0, 500) }, { dedupeHours: 24 });
+    else await mkAlert(tx, { level: 'warning', dept: 'tech', agent: org.manager('tech'), title: `فشل تنفيذ «${t.title}»`, detail: err.slice(0, 500) });
   });
   ctx.refreshMetrics();
 }

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "خادم شركة الوكلاء: الواجهة البرمجية، البث الحي، المحرك، ومشغّل الوكلاء",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
     "start": "node --env-file-if-exists=.env dist/main.js",

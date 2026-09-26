@@ -7,7 +7,10 @@ import type { ServerEvent } from '@agents/domain';
 // int8 (bigint) money columns fit safely in a JS number (halalas < 2^53)
 pg.types.setTypeParser(20, v => Number(v));
 
-export type Queryable = Pick<pg.PoolClient, 'query'>;
+export interface Queryable {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query<R extends pg.QueryResultRow = any>(sql: string, params?: unknown[]): Promise<pg.QueryResult<R>>;
+}
 
 /** A unit of work: one SQL transaction plus the events to publish after it commits. */
 export interface Tx extends Queryable {
@@ -18,7 +21,8 @@ export interface Tx extends Queryable {
 
 export interface Db {
   pool: pg.Pool;
-  query<R extends pg.QueryResultRow = pg.QueryResultRow>(sql: string, params?: unknown[]): Promise<pg.QueryResult<R>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query<R extends pg.QueryResultRow = any>(sql: string, params?: unknown[]): Promise<pg.QueryResult<R>>;
   tx<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
@@ -28,11 +32,11 @@ export function createDb(url: string, publish: (events: ServerEvent[]) => void, 
   pool.on('error', e => onError?.(e));
   return {
     pool,
-    query: (sql, params) => pool.query(sql, params as unknown[]),
+    query: ((sql: string, params?: unknown[]) => pool.query(sql, params)) as Db['query'],
     async tx(fn) {
       const client = await pool.connect();
       const events: ServerEvent[] = []; const afters: (() => void | Promise<void>)[] = [];
-      const tx: Tx = { query: client.query.bind(client) as Tx['query'], emit: e => events.push(e), after: f => afters.push(f) };
+      const tx: Tx = { query: ((sql: string, params?: unknown[]) => client.query(sql, params)) as Tx['query'], emit: e => events.push(e), after: f => afters.push(f) };
       try {
         await client.query('begin');
         const out = await fn(tx);

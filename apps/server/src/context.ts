@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { buildOrg, type CompanyConfig, type Org } from '@agents/domain';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from './db/db.js';
@@ -27,6 +28,12 @@ export interface Ctx {
   setConfig(cfg: CompanyConfig): void;
   /** debounced recomputation of department metrics (emits `metric` events) */
   refreshMetrics(): void;
+  /** injected model client (tests); production uses the Anthropic SDK client built from ANTHROPIC_API_KEY */
+  llm?: LlmClient;
+}
+
+export interface LlmClient {
+  messages: { create(body: Anthropic.MessageCreateParamsNonStreaming, opts?: { signal?: AbortSignal }): Promise<Anthropic.Message> };
 }
 
 export function makeOrgHolder(initial: CompanyConfig): { org: () => Org; set: (c: CompanyConfig) => void } {
