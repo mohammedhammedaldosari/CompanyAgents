@@ -1,6 +1,6 @@
 /** RFC 4180 CSV parser (quotes, escaped quotes, CRLF, BOM) with delimiter detection (, ; tab). */
 export function parseCsv(text: string): string[][] {
-  const s = text.replace(/^﻿/, '');
+  const s = text.replace(/^\uFEFF/, '');
   const first = s.split(/\r?\n/, 1)[0] ?? '';
   const delim = [',', ';', '\t'].map(d => [d, first.split(d).length] as const).sort((a, b) => b[1] - a[1])[0]![0];
   const rows: string[][] = []; let row: string[] = []; let cell = ''; let q = false;

@@ -36,7 +36,7 @@ export async function uploadFile(ctx: Ctx, i: { name: string; mime?: string; dat
   if (data.length > MAX_FILE) throw bad('حجم الملف أكبر من 10 ميجابايت');
   const mime = String(i.mime || 'application/octet-stream').slice(0, 100);
   const isText = TEXT_MIME.test(mime) || TEXT_EXT.test(name);
-  const text = isText ? data.toString('utf8').replace(/^﻿/, '') : null;
+  const text = isText ? data.toString('utf8').replace(/^\uFEFF/, '') : null;
   if (kind === 'bank' && !text) throw bad('كشف البنك يجب أن يكون ملف CSV (صدّره من البنك أو من Excel بصيغة CSV)');
   const id = newId('f');
   const sha = crypto.createHash('sha256').update(data).digest('hex');

@@ -8,6 +8,7 @@ const password = process.env.E2E_PASSWORD || '';
 const shots = process.env.E2E_SHOTS || '';
 const fail = m => { console.error('✗ ' + m); process.exitCode = 1; };
 const ok = m => console.log('✓ ' + m);
+const check = (cond, pass, failMsg) => { if (cond) ok(pass); else fail(failMsg); };
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Riyadh', locale: 'ar-SA' });
@@ -23,19 +24,19 @@ try {
   await page.waitForTimeout(1500);
   if (await page.locator('#modal.open').count()) { await page.keyboard.press('Escape'); ok('morning brief opened automatically'); }
   const cards = await page.locator('.dcard').count();
-  cards === 8 ? ok('8 department cards') : fail(`expected 8 department cards, got ${cards}`);
+  check(cards === 8, '8 department cards', `expected 8 department cards, got ${cards}`);
   const tools = await page.locator('#tools .tool').count();
-  tools === 10 ? ok('10 core tools in the header') : fail(`expected 10 header tools, got ${tools}`);
+  check(tools === 10, '10 core tools in the header', `expected 10 header tools, got ${tools}`);
   if (shots) await page.screenshot({ path: `${shots}/overview.png` });
   await page.locator('.dcard').nth(2).click(); await page.waitForTimeout(1200);
-  (await page.textContent('#left')).includes('مدير') ? ok('department panel opens on focus') : fail('department panel missing');
+  check((await page.textContent('#left')).includes('مدير'), 'department panel opens on focus', 'department panel missing');
   await page.fill('#c-text', 'اختبار آلي: مراجعة الملاحظات'); await page.keyboard.press('Control+Enter'); await page.waitForTimeout(1500);
-  (await page.textContent('#tasklist')).includes('اختبار آلي') ? ok('task created through the composer') : fail('created task not listed');
+  check((await page.textContent('#tasklist')).includes('اختبار آلي'), 'task created through the composer', 'created task not listed');
   await page.keyboard.press('Escape');
   await page.click('#prodbtn'); await page.waitForSelector('#products.open .kan');
-  (await page.locator('#products .kcol').count()) === 5 ? ok('products board has 5 stages') : fail('products board');
+  check((await page.locator('#products .kcol').count()) === 5, 'products board has 5 stages', 'products board');
   await page.click('#calbtn'); await page.waitForSelector('#cal.open .mgrid'); ok('calendar opens');
   await page.click('#policybtn'); await page.waitForSelector('#admin.open'); ok('admin console opens');
   if (shots) await page.screenshot({ path: `${shots}/admin.png` });
-  errors.length ? fail('page errors: ' + errors.join(' | ')) : ok('no page errors');
+  if (errors.length) fail('page errors: ' + errors.join(' | ')); else ok('no page errors');
 } catch (e) { fail(e.message); } finally { await browser.close(); }
