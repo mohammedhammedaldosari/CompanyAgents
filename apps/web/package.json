@@ -9,13 +9,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "echo web: plain ES modules, no typecheck step yet",
-    "test": "echo 'web: covered by e2e (apps/web/e2e)'"
+    "test": "echo 'web: covered by e2e (apps/web/e2e)'",
+    "e2e": "node e2e/smoke.mjs"
   },
   "dependencies": {
     "@agents/domain": "workspace:*",
     "three": "0.128.0"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "vite": "^6.4.3"
   }
 }

@@ -1,0 +1,30 @@
+# تشغيل كامل محليًا أو على خادم واحد: قاعدة البيانات + المنصة.
+# 1) انسخ apps/server/.env.example إلى .env في جذر المشروع واملأ القيم
+# 2) docker compose up -d --build
+# 3) افتح http://localhost:8080
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agents
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: agents
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://agents:${POSTGRES_PASSWORD:-change-me}@db:5432/agents
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports: ["8080:8080"]
+
+volumes:
+  pgdata:
