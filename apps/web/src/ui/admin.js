@@ -193,12 +193,12 @@ Object.assign(UI,{
     <span class="sp"></span><button class="pill sm primary" data-ad="cadd">إضافة موصل</button></div>
    ${grp('الأساسية · المرحلة 2',list.filter(t=>t.core))}${grp('الإضافية · المرحلة 3',list.filter(t=>!t.core&&!t.custom))}${grp('موصلات مخصصة',list.filter(t=>t.custom))}
    ${list.length?'':'<div class="empty">لا موصلات مطابقة.</div>'}`;},
- openConnect(id){const t=TOOL[id],c=store.connectors[id]||{};const mcp=t.m==='mcp',ro=t.m==='import'||t.m==='manual';let auth=CONFIG.mode==='live'?'key':(c.auth&&c.auth!=='none'?c.auth:(mcp?'oauth':'key'));
+ openConnect(id){const t=TOOL[id],c=store.connectors[id]||{};const mcp=t.m==='mcp',ro=t.m==='import'||t.m==='manual';let auth=mcp?(c.auth==='oauth'||!c.hasSecret?'oauth':'key'):'key';
   const html=()=>`<h2>${ro?'تفعيل':'ربط'} ${E(t.name)}</h2><div class="sub">${METHOD[t.m]} · المرحلة ${t.phase}${t.dom?' · <span class="mono" dir="ltr">'+E(t.dom)+'</span>':''}</div>
-   ${CONFIG.mode==='sim'?'<div class="banner" style="margin-top:12px">محاكاة: لن يُرسل شيء لأي خدمة، ولن يُحفظ المفتاح؛ تُعرض آخر 4 خانات فقط.</div>':'<div class="banner" style="margin-top:12px">يُشفَّر المفتاح في خزنة الخادم ولا يعود للمتصفح. بعد الربط يُجرى اختبار اتصال حقيقي. التفويض عبر OAuth يأتي في تحديث لاحق.</div>'}
+   ${CONFIG.mode==='sim'?'<div class="banner" style="margin-top:12px">محاكاة: لن يُرسل شيء لأي خدمة، ولن يُحفظ المفتاح؛ تُعرض آخر 4 خانات فقط.</div>':'<div class="banner" style="margin-top:12px">المفاتيح ورموز التفويض تُشفَّر في خزنة الخادم ولا تعود للمتصفح. بعد الربط يُجرى اختبار اتصال حقيقي، وأفعال الكتابة تمر دائمًا بصلاحيات الشركة.</div>'}
    ${ro?'<div class="tm" style="margin-top:12px">هذه الأداة تعمل بالاستيراد أو الإدخال اليدوي. التفعيل يجعلها متاحة للوكلاء بصلاحية قراءة.</div>':`
    ${mcp?`<div class="fld"><span class="h4">رابط خادم MCP</span><input class="inp mono" id="cn-url" dir="ltr" placeholder="https://…/mcp" value="${E(c.url||KNOWN_MCP[id]||'')}"></div>`:''}
-   <div class="fld"><span class="h4">طريقة التفويض</span>${segA('cnauth',[['oauth','تفويض OAuth'],['key','مفتاح API']],auth)}</div>
+   ${mcp?`<div class="fld"><span class="h4">طريقة التفويض</span>${segA('cnauth',[['oauth','تفويض OAuth'],['key','مفتاح API']],auth)}</div>`:''}
    ${auth==='key'?`<div class="fld"><span class="h4">${id==='sellercentral'?'رمز التحديث من مركز البائع (Refresh token)':mcp?'رمز الوصول (Bearer token)':'المفتاح'}</span><input class="inp mono" id="cn-secret" type="password" autocomplete="off" dir="ltr" placeholder="${c.hasSecret?'•••• '+E(c.last4)+' — اتركه فارغًا للإبقاء':'الصق المفتاح هنا'}"></div>`:'<div class="tm" style="margin-top:8px">ستفتح نافذة تسجيل الدخول لدى الخدمة، ثم تعود إلى هنا تلقائيًا.</div>'}
    <div class="fld"><span class="h4">صلاحيات الوكلاء على هذه الأداة</span>${segA('cnscope',[['read','قراءة فقط'],['write','قراءة وكتابة']],c.scopes||'write')}</div>`}
    <div class="acts"><button class="pill primary" data-primary id="cn-ok">${ro?'تفعيل':'ربط'}</button><button class="pill" data-m="close">إلغاء</button></div>`;
@@ -207,7 +207,7 @@ Object.assign(UI,{
    box.querySelectorAll('[data-ad="cnscope"]').forEach(b=>b.addEventListener('click',()=>{scopes=b.dataset.v;box.querySelectorAll('[data-ad="cnscope"]').forEach(x=>x.classList.toggle('on',x===b));}));
    $('#cn-ok').addEventListener('click',async e=>{const ok=e.currentTarget;const p=ro?{auth:'none',scopes:'read'}:{url:$('#cn-url')?$('#cn-url').value.trim():undefined,auth,scopes};
     const sec=$('#cn-secret');if(sec&&sec.value.trim()){p.secret=sec.value.trim();sec.value='';}if(!ro&&auth==='key'&&!p.secret&&!c.hasSecret){this.toast('الصق المفتاح أو اختر تفويض OAuth');return;}
-    ok.disabled=true;ok.textContent='جارٍ الربط…';const r=await call('connectorAction',id,'connect',p);if(r){this.closeModal();this.toast(`${ro?'فُعّل':'رُبط'} ${t.name}`);this.renderAdmin(true);}else{ok.disabled=false;ok.textContent='ربط';}});};
+    ok.disabled=true;ok.textContent='جارٍ الربط…';const r=await call('connectorAction',id,'connect',p);if(r&&r.authorizeUrl){this.closeModal();const w=window.open(r.authorizeUrl,'agents-oauth','width=560,height=720');if(!w)location.href=r.authorizeUrl;this.toast('أكمل تسجيل الدخول في النافذة المفتوحة');this.renderAdmin(true);}else if(r){this.closeModal();this.toast(`${ro?'فُعّل':(r.state==='connected'?'رُبط':'حُفظ')} ${t.name}${r.state!=='connected'&&r.lastError?' — '+r.lastError:''}`);this.renderAdmin(true);}else{ok.disabled=false;ok.textContent='ربط';}});};
   bind();},
  openAddConnector(){this.openModal(`<h2>إضافة موصل</h2><div class="sub">لخدمة غير موجودة في القائمة. يظهر للأقسام التي تختارها ويحتاج ربطًا بعد الإضافة.</div>
    <div class="fgrid" style="margin-top:12px"><div class="fld" style="margin:0"><span class="h4">الاسم</span><input class="inp" id="ac-name" maxlength="40"></div>

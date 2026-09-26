@@ -201,6 +201,7 @@ function showLogin(msg){return new Promise(res=>{const b=$('#boot');b.classList.
   setTimeout(()=>{const i=$('#lg-t');if(i)i.focus();},50);});}
 async function boot(){wire();UI.buildComposer();Viz.init();Overlay.init();
  window.addEventListener('agents:unauthorized',()=>{if(store.ready)location.reload();});
+ window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data&&e.data.type==='agents:oauth')UI.toast(e.data.ok?'اكتمل التفويض ونجح اختبار الموصل':'لم يكتمل التفويض؛ راجع سجل الموصل');});
  let me=null;
  for(;;){try{me=await auth.me();break;}catch(e){$('#boot').textContent='تعذّر الوصول للخادم، أُعيد المحاولة خلال 5 ثوانٍ';await new Promise(r=>setTimeout(r,5000));}}
  if(!me.ownerConfigured){$('#boot').textContent='لم تُضبط كلمة مرور المالك بعد. شغّل على الخادم: pnpm --filter @agents/server cli set-password';return;}

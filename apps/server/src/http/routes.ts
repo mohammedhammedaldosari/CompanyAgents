@@ -98,6 +98,28 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.put('/api/running', async req => { await ops.setRunning(ctx, !!(req.body as { on?: boolean })?.on); return { ok: true }; });
   app.post('/api/briefs/:id/read', async req => { await markBriefRead(ctx, P(req).id!); return { ok: true }; });
 
+  // OAuth 2.1 callback for MCP connectors. Reached by a cross-site redirect (no session cookie with SameSite=Strict),
+  // so it is authorised by the single-use state bound to the flow instead.
+  app.get('/api/oauth/callback', async (req, reply) => {
+    const q = req.query as { code?: string; state?: string; error?: string; error_description?: string };
+    let ok = false; let msg: string;
+    try {
+      if (q.error) throw new Error(q.error_description || q.error);
+      if (!q.code || !q.state) throw new Error('رد التفويض ناقص');
+      const { finishOAuth } = await import('../connectors/oauth.js');
+      const tool = await finishOAuth(ctx, q.state, q.code, async t => (await ctx.db.query('select url from connectors where tool = $1', [t])).rows[0]?.url);
+      const r = await conn.realTest(ctx, tool);
+      if (r) await conn.report(ctx, tool, r);
+      ok = !!r?.ok; msg = ok ? `تم ربط «${ctx.org().tool(tool)?.name ?? tool}» بنجاح` : `اكتمل التفويض لكن فشل الاختبار: ${r?.error ?? ''}`;
+    } catch (e) { msg = (e as Error).message; }
+    const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    reply.type('text/html; charset=utf-8').header('cache-control', 'no-store');
+    return `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>التفويض</title>
+<body style="font-family:system-ui;background:#16183D;color:#EEF0FF;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><h2>${ok ? '✓' : '✗'} ${esc(msg)}</h2><p>يمكنك إغلاق هذه النافذة والعودة إلى لوحة الإدارة.</p></div>
+<script>try{window.opener&&window.opener.postMessage({type:'agents:oauth',ok:${ok}},location.origin);setTimeout(()=>window.close(),1500)}catch(e){}</script></body></html>`;
+  });
+
   // owner files and imports
   app.get('/api/files', async () => files.listFiles(ctx.db));
   app.post('/api/files', { bodyLimit: 15 * 1024 * 1024 }, async req => files.uploadFile(ctx, parse(z.object({ name: z.string().min(1).max(200),

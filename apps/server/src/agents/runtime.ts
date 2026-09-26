@@ -10,7 +10,7 @@ import { getProduct, getTask, saveTask, type TaskRow } from '../repo/rows.js';
 import { act, company, kpi } from '../services/common.js';
 import { emitTask, finishTask, type ExecOutcome } from '../services/tasks.js';
 import { recordUsage } from '../services/usage.js';
-import { secretId } from '../services/connectors.js';
+import { mcpAuthFor } from '../services/connectors.js';
 import { openMcp, type McpSession } from '../connectors/mcp.js';
 import { agentSystemPrompt, taskMessage } from './prompts.js';
 import { builtinTools, mcpTools, type AgentTool, type RunEnv } from './tools.js';
@@ -70,11 +70,11 @@ async function openConnectors(ctx: Ctx, t: TaskRow): Promise<{ tools: AgentTool[
   const org = ctx.org(); const allowed = org.agent(t.agent)?.tools;
   const ids = org.dept(t.dept).tools.filter(x => !allowed || allowed.includes(x));
   if (!ids.length) return { tools: [], sessions: [] };
-  const rows = (await ctx.db.query(`select tool, url, scopes from connectors where tool = any($1) and state = 'connected' and url <> ''`, [ids])).rows;
+  const rows = (await ctx.db.query(`select tool, url, scopes, auth from connectors where tool = any($1) and state = 'connected' and url <> ''`, [ids])).rows;
   const tools: AgentTool[] = []; const sessions: McpSession[] = [];
   for (const r of rows) {
     try {
-      const s = await openMcp(r.url, await ctx.vault.get(ctx.db, secretId(r.tool)));
+      const s = await openMcp(r.url, await mcpAuthFor(ctx, r.tool, r.auth));
       sessions.push(s); tools.push(...mcpTools(r.tool, s, r.scopes));
     } catch (e) { ctx.log.warn({ err: e, connector: r.tool }, 'mcp connect failed; continuing without it'); }
   }

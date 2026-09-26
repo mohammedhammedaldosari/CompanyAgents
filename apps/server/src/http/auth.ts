@@ -80,7 +80,7 @@ export function registerAuth(app: FastifyInstance, ctx: Ctx): void {
 export function authGuard(ctx: Ctx) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
     const url = req.url.split('?')[0]!;
-    if (!url.startsWith('/api/') || url.startsWith('/api/auth/') || url === '/api/health') return;
+    if (!url.startsWith('/api/') || url.startsWith('/api/auth/') || url === '/api/health' || url === '/api/oauth/callback') return;
     const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization!.slice(7) : '';
     const sid = await sessionFor(ctx, req.cookies[COOKIE] || bearer);
     if (sid) { req.principal = { kind: 'owner', sessionId: sid }; return; }

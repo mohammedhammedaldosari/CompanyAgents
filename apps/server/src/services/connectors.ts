@@ -6,7 +6,13 @@ import type { Queryable, Tx } from '../db/db.js';
 import { bad, notFound } from '../core/errors.js';
 import { newId } from '../core/ids.js';
 import { toConnector } from '../repo/rows.js';
-import { testMcp } from '../connectors/mcp.js';
+import { testMcp, type McpAuth } from '../connectors/mcp.js';
+import { VaultOAuthProvider, clearOAuth, startOAuth } from '../connectors/oauth.js';
+
+/** Credentials for an MCP connector: OAuth provider when authorised that way, else the stored key. */
+export async function mcpAuthFor(ctx: Ctx, tool: string, auth: string): Promise<McpAuth> {
+  return auth === 'oauth' ? new VaultOAuthProvider(ctx, tool) : ctx.vault.get(ctx.db, secretId(tool));
+}
 import { spConfigured, spSyncToday, spTest, type SpApiConfig } from '../connectors/spapi.js';
 import { adsCampaigns, adsConfigured, adsTest, type AdsConfig } from '../connectors/amazonads.js';
 import { audit, emitKpi, setKpiDay } from './common.js';
@@ -93,8 +99,8 @@ export async function spRefresh(ctx: Ctx, db: Queryable): Promise<string | null>
 }
 
 /** Real connectivity test. Returns null when no real client exists for this tool. */
-async function realTest(ctx: Ctx, id: string): Promise<{ ok: boolean; latency: number; note?: string; error?: string } | null> {
-  const row = (await ctx.db.query('select url from connectors where tool = $1', [id])).rows[0];
+export async function realTest(ctx: Ctx, id: string): Promise<{ ok: boolean; latency: number; note?: string; error?: string } | null> {
+  const row = (await ctx.db.query('select url, auth from connectors where tool = $1', [id])).rows[0];
   if (id === 'sellercentral' && !row?.url) {
     const rt = await spRefresh(ctx, ctx.db);
     if (!spConfigured(spConfig(ctx), rt)) return { ok: false, latency: 0, error: 'اضبط SPAPI_CLIENT_ID وSPAPI_CLIENT_SECRET في الخادم، والصق رمز التحديث كمفتاح' };
@@ -105,11 +111,11 @@ async function realTest(ctx: Ctx, id: string): Promise<{ ok: boolean; latency: n
     if (!adsConfigured(adsConfig(ctx), rt)) return { ok: false, latency: 0, error: 'اضبط ADS_CLIENT_ID وADS_CLIENT_SECRET وADS_PROFILE_ID في الخادم، والصق رمز التحديث كمفتاح' };
     return adsTest(adsConfig(ctx), rt!);
   }
-  if (row?.url) return testMcp(row.url, await ctx.vault.get(ctx.db, secretId(id)));
+  if (row?.url) return testMcp(row.url, await mcpAuthFor(ctx, id, row.auth));
   return null;
 }
 
-async function report(ctx: Ctx, id: string, r: { ok: boolean; latency: number; note?: string; error?: string }): Promise<void> {
+export async function report(ctx: Ctx, id: string, r: { ok: boolean; latency: number; note?: string; error?: string }): Promise<void> {
   await ctx.db.tx(async tx => {
     if (r.ok) {
       await tx.query(`update connectors set state = 'connected', last_error = '', latency = $2, last_sync = now() where tool = $1`, [id, r.latency]);
@@ -125,13 +131,32 @@ async function report(ctx: Ctx, id: string, r: { ok: boolean; latency: number; n
 
 export interface ConnectInput { url?: string; auth?: 'oauth' | 'key' | 'none'; secret?: string; scopes?: 'read' | 'write' }
 
-export async function connectorAction(ctx: Ctx, id: string, action: string, p: ConnectInput = {}): Promise<ConnectorStatus & { latency?: number | null }> {
+export async function connectorAction(ctx: Ctx, id: string, action: string, p: ConnectInput = {}): Promise<ConnectorStatus & { latency?: number | null; authorizeUrl?: string }> {
   const t = ctx.org().tool(id);
   if (!t) throw notFound('موصل غير معروف');
   const name = t.name;
   if (action === 'connect') {
-    if (p.auth === 'oauth') throw bad('التفويض عبر OAuth لم يُفعَّل بعد في هذا الإصدار؛ اختر «مفتاح API» والصق رمز الوصول');
-    if (p.url && !/^https:\/\//.test(p.url)) throw bad('رابط الخادم يجب أن يبدأ بـ https://');
+    if (p.url && !/^https:\/\//.test(p.url) && !(ctx.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(p.url))) throw bad('رابط الخادم يجب أن يبدأ بـ https://');
+    if (p.auth === 'oauth') {
+      const cur = (await ctx.db.query('select url from connectors where tool = $1', [id])).rows[0];
+      const url = p.url || cur?.url;
+      if (!url) throw bad('التفويض عبر OAuth متاح لموصلات MCP: أدخل رابط خادم MCP');
+      await ctx.db.tx(async tx => {
+        await tx.query(`update connectors set state = 'connecting', url = $2, auth = 'oauth', last4 = '', scopes = coalesce($3, scopes) where tool = $1`, [id, url, p.scopes || null]);
+        await log(tx, id, 'info', 'بدأ التفويض عبر OAuth');
+        await audit(tx, 'الموصلات', 'ربط عبر OAuth', name);
+        await emitConnectors(ctx, tx);
+      });
+      let authorizeUrl: string | null;
+      try { authorizeUrl = await startOAuth(ctx, id, url); }
+      catch (e) {
+        await report(ctx, id, { ok: false, latency: 0, error: `تعذّر بدء التفويض: ${(e as Error).message}` });
+        throw bad(`تعذّر بدء التفويض: ${(e as Error).message}`);
+      }
+      if (authorizeUrl) return { ...(await connectorMap(ctx, ctx.db))[id]!, authorizeUrl } as ConnectorStatus & { authorizeUrl: string };
+      const r = await realTest(ctx, id); if (r) await report(ctx, id, r);
+      return (await connectorMap(ctx, ctx.db))[id]!;
+    }
     await ctx.db.tx(async tx => {
       const cur = (await tx.query('select url from connectors where tool = $1', [id])).rows[0];
       if (t.m === 'mcp' && !p.url && !cur?.url) throw bad('أدخل رابط خادم MCP');
@@ -169,6 +194,7 @@ export async function connectorAction(ctx: Ctx, id: string, action: string, p: C
       }
       if (action === 'disconnect') {
         await ctx.vault.delete(tx, secretId(id));
+        await clearOAuth(ctx, id);
         await tx.query(`update connectors set state = $2, last4 = '', last_sync = null, url = '' where tool = $1`, [id, initialState(t)]);
         await log(tx, id, 'warn', 'فُصل الموصل وحُذف التفويض'); await audit(tx, 'الموصلات', 'فصل', name);
       }

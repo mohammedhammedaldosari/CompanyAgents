@@ -2,6 +2,10 @@
    passes through the permission gate and the audit log (see agents/tools.ts). */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+
+/** A static bearer token (API key) or an OAuth provider (tokens refreshed by the SDK). */
+export type McpAuth = string | null | OAuthClientProvider;
 
 export interface McpToolInfo {
   name: string;
@@ -20,10 +24,10 @@ export interface McpSession {
 
 const TIMEOUT = 30_000;
 
-export async function openMcp(url: string, token: string | null, signal?: AbortSignal): Promise<McpSession> {
-  const transport = new StreamableHTTPClientTransport(new URL(url), {
-    requestInit: { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-  });
+export async function openMcp(url: string, authz: McpAuth, signal?: AbortSignal): Promise<McpSession> {
+  const transport = new StreamableHTTPClientTransport(new URL(url), authz && typeof authz === 'object'
+    ? { authProvider: authz }
+    : { requestInit: { headers: authz ? { Authorization: `Bearer ${authz}` } : {} } });
   const client = new Client({ name: 'agents-company', version: '0.1.0' });
   await client.connect(transport, { timeout: TIMEOUT, signal });
   const listed = await client.listTools(undefined, { timeout: TIMEOUT, signal });
@@ -50,7 +54,7 @@ export async function openMcp(url: string, token: string | null, signal?: AbortS
 }
 
 /** Connectivity test used by the admin console: initialize + tools/list. */
-export async function testMcp(url: string, token: string | null): Promise<{ ok: boolean; latency: number; note?: string; error?: string; tools?: number }> {
+export async function testMcp(url: string, token: McpAuth): Promise<{ ok: boolean; latency: number; note?: string; error?: string; tools?: number }> {
   const t0 = Date.now(); const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 15_000);
   try {
     const s = await openMcp(url, token, ctrl.signal);
