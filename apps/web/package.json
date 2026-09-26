@@ -1,0 +1,21 @@
+{
+  "name": "@agents/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "واجهة شركة الوكلاء: المشهد ثلاثي الأبعاد واللوحات ولوحة الإدارة فوق المحوّل الحي",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "echo web: plain ES modules, no typecheck step yet",
+    "test": "echo 'web: covered by e2e (apps/web/e2e)'"
+  },
+  "dependencies": {
+    "@agents/domain": "workspace:*",
+    "three": "0.128.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3"
+  }
+}

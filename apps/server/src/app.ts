@@ -74,7 +74,7 @@ export async function build(env: Env, opts: { llm?: LlmClient; jobs?: Jobs; logg
 
   const web = env.WEB_DIST && path.resolve(env.WEB_DIST);
   if (web && fs.existsSync(path.join(web, 'index.html'))) {
-    await app.register(fstatic, { root: web, prefix: '/', wildcard: false, maxAge: '1h', setHeaders: (res, p) => { if (p.endsWith('index.html')) (res as unknown as { setHeader(k: string, v: string): void }).setHeader('cache-control', 'no-cache'); } });
+    await app.register(fstatic, { root: web, prefix: '/', wildcard: false, maxAge: '1h', setHeaders: (reply, p) => { if (p.endsWith('index.html')) reply.header('cache-control', 'no-cache'); } });
     app.setNotFoundHandler((req, reply) => (req.url.startsWith('/api/') ? reply.status(404).send({ error: 'مسار غير موجود' }) : reply.sendFile('index.html')));
   } else {
     app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: 'مسار غير موجود' }));

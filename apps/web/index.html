@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>شركة الوكلاء · لوحة القيادة</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+<div id="app">
+  <svg id="wires" aria-hidden="true"><g id="g-tools"></g><g id="g-brain"></g><g id="g-route"></g><g id="g-pulse"></g></svg>
+  <header id="top">
+    <div class="brand"><div class="mark" aria-hidden="true">و</div><div><h1>شركة الوكلاء</h1><small>تجارة أمازون السعودية · 32 وكيلًا</small></div></div>
+    <div class="conn" id="tools" aria-label="الأدوات المتصلة"></div>
+    <div class="rt">
+      <button class="pill" id="engine" aria-label="إيقاف أو استئناف كل الوكلاء"><span class="d"></span><span class="t">يعمل في الخلفية على ✳</span></button>
+      <button class="pill" id="calbtn">التقويم</button>
+      <button class="pill" id="prodbtn">المنتجات</button>
+      <button class="pill" id="alertbtn" aria-label="التنبيهات">🔔 <span class="mono">0</span></button>
+      <button class="pill" id="apbtn" aria-label="الموافقات">▲ <span class="mono">0</span></button>
+      <button class="pill" id="policybtn" aria-label="لوحة الإدارة" title="لوحة الإدارة">⚙</button>
+      <div id="clock" aria-live="off">--:--:--</div>
+    </div>
+  </header>
+  <section id="pulse">
+    <div id="kpis" style="display:flex;gap:10px;flex:1;min-width:0"></div>
+    <button class="pill" id="briefbtn">الإيجاز الصباحي</button>
+  </section>
+  <main id="main">
+    <aside id="left" aria-label="لوحة القسم"></aside>
+    <section id="stage" aria-label="مبنى الشركة">
+      <canvas id="cv"></canvas>
+      <div id="overlay"></div>
+      <button class="pill" id="back">▶ النظرة العامة</button>
+      <div class="zoom"><button id="zin" aria-label="تكبير">+</button><button id="zout" aria-label="تصغير">−</button><button id="zhome" aria-label="النظرة العامة">⌂</button></div>
+      <div class="stage-hint">اسحب للتنقل · العجلة للتكبير · انقر منصة للتركيز</div>
+    </section>
+    <aside id="right" aria-label="المهام">
+      <div class="composer" id="composer"></div>
+      <div class="tsh" id="tsh"></div>
+      <div id="filters"></div>
+      <div id="nextline"></div>
+      <div id="tasklist"></div>
+    </aside>
+    <div id="cal" class="layer" aria-label="التقويم"></div>
+    <div id="products" class="layer" aria-label="المنتجات"></div>
+    <div id="admin" class="layer" aria-label="لوحة الإدارة"></div>
+  </main>
+  <footer id="foot"></footer>
+  <div id="boot">جارٍ تجهيز الشركة…</div>
+</div>
+<div id="modal" role="dialog" aria-modal="true"></div>
+<div id="drop"></div>
+<div id="toast" role="status"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
