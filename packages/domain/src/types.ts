@@ -42,6 +42,8 @@ export interface PendingCall {
   connector?: string | null;
   reason: string;
   toolUseId: string;
+  /** set when the owner approved; the executor then runs the call verbatim */
+  approved?: boolean;
 }
 
 export interface Task {

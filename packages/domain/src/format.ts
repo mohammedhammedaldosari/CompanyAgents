@@ -64,7 +64,7 @@ export const arDigits = (s: string): string =>
   String(s).replace(/[٠-٩]/g, c => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g, c => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
 /** strip the definite article and attached prepositions (keeps at least two letters) */
 export const strip = (w: string): string => w.replace(/^(وال|بال|فال|كال|لل|ال)(?=..)/, '');
-export const words = (s: string): string[] => String(s).split(/[\s،,.:؛؟?!«»()\-]+/).filter(Boolean).map(strip);
+export const words = (s: string): string[] => String(s).split(/[\s،,.:؛؟?!«»()-]+/).filter(Boolean).map(strip);
 export const initials = (n: string): string => n.split(' ').filter(Boolean).slice(0, 2).map(w => strip(w)[0] || '').join('');
 export const slug = (s: string): string => String(s).replace(/[^؀-ۿa-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 export const esc = (s: unknown): string =>
