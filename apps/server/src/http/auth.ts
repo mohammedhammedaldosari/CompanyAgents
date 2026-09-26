@@ -64,7 +64,7 @@ export function registerAuth(app: FastifyInstance, ctx: Ctx): void {
     return { authenticated: !!sid, ownerConfigured: await ownerExists(ctx) };
   });
 
-  app.post('/api/auth/password', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req, reply) => {
+  app.post('/api/auth/password', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async req => {
     const sid = await sessionFor(ctx, req.cookies[COOKIE] || '');
     if (!sid) throw new AppError('غير مصرّح', 401);
     const b = req.body as { current?: string; next?: string };
@@ -72,7 +72,7 @@ export function registerAuth(app: FastifyInstance, ctx: Ctx): void {
     if (!(await verifyPassword(String(b?.current || ''), row.password_hash))) throw new AppError('كلمة المرور الحالية غير صحيحة', 401);
     await setOwnerPassword(ctx, String(b?.next || ''));
     await ctx.db.query('delete from sessions where id <> $1', [sid]); // sign out every other device
-    reply.status(204);
+    return { ok: true };
   });
 }
 

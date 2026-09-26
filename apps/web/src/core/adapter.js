@@ -72,5 +72,13 @@ export const adapter = {
   connectorAction: (id, action, p) => req('POST', `/api/connectors/${id}/${action}`, p || {}),
   addConnector: i => req('POST', '/api/connectors', i),
   removeConnector: id => req('DELETE', `/api/connectors/${id}`),
+  listFiles: () => req('GET', '/api/files'),
+  uploadFile: f => req('POST', '/api/files', f),
+  deleteFile: id => req('DELETE', `/api/files/${id}`),
+  importBank: id => req('POST', `/api/files/${id}/import-bank`, {}),
+  toolCalls: (limit = 150) => req('GET', `/api/tool-calls?limit=${limit}`),
+  taskCalls: id => req('GET', `/api/tasks/${id}/calls`),
+  setMetric: (dept, values) => req('PUT', `/api/metrics/${dept}`, { values }),
+  changePassword: (current, next) => req('POST', '/api/auth/password', { current, next }),
   reset: async () => UI.toast('إعادة الضبط غير متاحة في الوضع المتصل')
 };

@@ -10,7 +10,7 @@ const tasksArr=()=>Array.from(store.tasks.values());
 const prodById=id=>store.products.find(p=>p.id===id);
 function applySnapshot(s){s=s||{};store.tasks=new Map((s.tasks||[]).map(t=>[t.id,t]));store.routines=s.routines||[];store.products=s.products||[];store.alerts=s.alerts||[];
  store.policies=s.policies||[];store.kpi=s.kpi||{};store.metrics=s.metrics||{};store.chats=s.chats||{};store.briefs=s.briefs||[];store.events=(s.events||[]).slice(-150);
- store.notes=s.notes||0;store.running=s.running!==false;store.ready=true;
+ store.notes=s.notes||0;store.running=s.running!==false;store.ready=true;store.base=s.base||{};
  store.config=s.config||null;store.configHistory=s.configHistory||[];store.audit=s.audit||[];store.usage=s.usage||null;store.connectors=s.connectors||{};if(store.config)applyConfig(store.config);}
 const upsert=(arr,o)=>{const i=arr.findIndex(x=>x.id===o.id);if(i<0)arr.push(o);else arr[i]=o;};
 function onEvent(e){switch(e.type){

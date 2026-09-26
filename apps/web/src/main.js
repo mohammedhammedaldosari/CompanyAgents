@@ -2,4 +2,5 @@
 import './ui/scene.js';
 import './ui/ui.js';
 import './ui/admin.js';
+import './ui/data-admin.js';
 import './ui/panels.js';
