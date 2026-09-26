@@ -1,0 +1,30 @@
+{
+  "name": "agents-company",
+  "private": true,
+  "version": "0.1.0",
+  "description": "شركة الوكلاء — منصة وكلاء ذكاء اصطناعي لإدارة تجارة أمازون السعودية",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "eslint .",
+    "dev:server": "pnpm --filter @agents/server dev",
+    "dev:web": "pnpm --filter @agents/web dev",
+    "migrate": "pnpm --filter @agents/server migrate",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.4",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^3.2.7"
+  }
+}
