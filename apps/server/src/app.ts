@@ -9,7 +9,9 @@ import { defaultConfig } from '@agents/domain';
 import type { Ctx, Jobs, LlmClient } from './context.js';
 import { makeOrgHolder } from './context.js';
 import { createDb, migrate } from './db/db.js';
-import { Bus } from './core/bus.js';
+import { Bus, PgBus } from './core/bus.js';
+import { currentConfig } from './services/config.js';
+import { snapshot } from './services/snapshot.js';
 import { Vault } from './core/vault.js';
 import { AppError } from './core/errors.js';
 import type { Env } from './env.js';
@@ -26,24 +28,35 @@ export async function build(env: Env, opts: { llm?: LlmClient; jobs?: Jobs; logg
     logger: opts.logger === false ? false : { level: env.LOG_LEVEL, redact: ['req.headers.authorization', 'req.headers.cookie'] },
     trustProxy: env.TRUST_PROXY, bodyLimit: 2 * 1024 * 1024
   });
-  const bus = new Bus();
+  const bus = env.EVENT_BUS === 'pg' ? new PgBus(env.DATABASE_URL, e => app.log.warn({ err: e }, 'bus')) : new Bus();
   const db = createDb(env.DATABASE_URL, ev => bus.publish(ev), e => app.log.error({ err: e }, 'db'));
   await migrate(db, m => app.log.info(m));
 
   const holder = makeOrgHolder(defaultConfig());
   let engine: Engine | null = null;
+  const localJobs = () => opts.jobs ?? engine ?? noJobs;
+  // aborts travel over the bus so a run executing on another instance stops too
   const jobsProxy: Jobs = {
-    enqueueTask: id => (opts.jobs ?? engine ?? noJobs).enqueueTask(id),
-    abortTask: id => (opts.jobs ?? engine ?? noJobs).abortTask(id),
-    abortAll: () => (opts.jobs ?? engine ?? noJobs).abortAll()
+    enqueueTask: id => localJobs().enqueueTask(id),
+    abortTask: id => bus.control({ kind: 'abort', taskId: id }),
+    abortAll: () => bus.control({ kind: 'abort', taskId: '*' })
   };
   // eslint-disable-next-line prefer-const
   let ctx: Ctx;
   const refresh = metricsRefresher(() => ctx);
   ctx = {
     env, db, bus, vault: new Vault(env.MASTER_KEY), log: app.log, jobs: jobsProxy,
-    org: holder.org, setConfig: holder.set, refreshMetrics: refresh, llm: opts.llm
+    org: holder.org, setConfig: c => { holder.set(c); bus.control({ kind: 'config' }); }, refreshMetrics: refresh, llm: opts.llm
   };
+  let chain = Promise.resolve();
+  bus.onControl(c => {
+    chain = chain.then(async () => {
+      if (c.kind === 'abort') { if (c.taskId === '*') localJobs().abortAll(); else localJobs().abortTask(c.taskId); }
+      if (c.kind === 'config') { const cfg = await currentConfig(db); if (cfg && cfg.version !== holder.org().config.version) holder.set(cfg); }
+      if (c.kind === 'refetch') bus.local([{ type: 'snapshot', state: await snapshot(ctx) }]);
+    }).catch(e => app.log.warn({ err: e }, 'bus control'));
+  });
+  await bus.start();
 
   await bootstrap(ctx);
   if (env.OWNER_PASSWORD && !(await ownerExists(ctx))) { await setOwnerPassword(ctx, env.OWNER_PASSWORD); app.log.info('✓ ضُبطت كلمة مرور المالك من OWNER_PASSWORD'); }
@@ -87,6 +100,6 @@ export async function build(env: Env, opts: { llm?: LlmClient; jobs?: Jobs; logg
 
   return {
     app, ctx, engine,
-    async close() { await engine?.stop(); await app.close(); await db.close(); }
+    async close() { await engine?.stop(); await app.close(); await bus.stop(); await db.close(); }
   };
 }

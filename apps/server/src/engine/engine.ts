@@ -7,7 +7,7 @@ import { listProducts, listTasks, saveProduct } from '../repo/rows.js';
 import { company, emitKpi, mkAlert, patchCompany } from '../services/common.js';
 import { issueBrief } from '../services/briefs.js';
 import { ensureRoutines } from '../services/routines.js';
-import { markFailed, startTask } from '../services/tasks.js';
+import { markFailed, routeTask, startTask } from '../services/tasks.js';
 import { overCap } from '../services/usage.js';
 import { spConfig, spRefresh, syncAds, syncSellerCentral } from '../services/connectors.js';
 import { spConfigured } from '../connectors/spapi.js';
@@ -98,6 +98,9 @@ export class Engine implements Jobs {
           if (cur) await startTask(ctx, tx, cur, now);
         });
       }
+      // CEO routing interrupted by a restart (the 1.5 s beat runs in-process)
+      const stuck = await ctx.db.query(`select id from tasks where status = 'progress' and routing is not null and updated_at < now() - interval '1 minute'`);
+      for (const x of stuck.rows) await routeTask(ctx, x.id).catch(e => ctx.log.warn({ err: e }, 'route recovery'));
       // orphaned "in progress" tasks (e.g. after a crash) go back to the queue
       if (now - this.lastRecover > 5 * H.MIN) {
         this.lastRecover = now;
