@@ -12,6 +12,17 @@ import { applyPriceChange, setStage } from '../services/effects.js';
 import { productBrief, kpiBrief } from './prompts.js';
 import { calculate } from './calc.js';
 import type { McpSession } from '../connectors/mcp.js';
+import { KIND_TOOL, fileText, listFiles, type FileKind } from '../services/files.js';
+import { adsConfig, canRead, canWrite, spConfig } from '../services/connectors.js';
+import { spEditListing, spSetPrice } from '../connectors/spapi.js';
+import { adsCampaigns, adsChangeBudget } from '../connectors/amazonads.js';
+
+/** Catalog tools this agent may use: its department's tools narrowed by its own profile. */
+const allowedTools = (e: RunEnv): string[] => {
+  const org = e.ctx.org(); const own = org.agent(e.agent)?.tools;
+  return org.dept(e.dept).tools.filter(t => !own || own.includes(t));
+};
+const fileKinds = (e: RunEnv): FileKind[] => (Object.keys(KIND_TOOL) as FileKind[]).filter(k => allowedTools(e).includes(KIND_TOOL[k]));
 
 export interface RunEnv {
   ctx: Ctx;
@@ -123,6 +134,34 @@ const readTools: AgentTool[] = [
     }
   },
   {
+    name: 'list_ad_campaigns', kind: 'read', description: 'حملات Sponsored Products في إعلانات أمازون مع حالتها وميزانيتها اليومية (إن كان الموصل مربوطًا).',
+    input_schema: obj({}),
+    run: async (_i, e) => {
+      if (!allowedTools(e).includes('amazonads')) return 'لا يحق لك الوصول إلى إعلانات أمازون.';
+      const r = await canRead(e.ctx, 'amazonads'); if (!r) return 'موصل إعلانات أمازون غير مربوط؛ لا توجد بيانات حملات.';
+      const C = await adsCampaigns(adsConfig(e.ctx), r.refresh);
+      return json(C.map(c => ({ الحملة: c.name, المعرف: c.campaignId, الحالة: c.state, 'الميزانية اليومية (ر.س)': c.budget })));
+    }
+  },
+  {
+    name: 'list_files', kind: 'read', description: 'الملفات التي رفعها المالك ويحق لك قراءتها (ملفات عامة، كشوف بنك، جداول أسعار الشحن).',
+    input_schema: obj({}),
+    run: async (_i, e) => {
+      const kinds = fileKinds(e); if (!kinds.length) return 'لا يحق لك الوصول إلى ملفات المالك.';
+      const F = await listFiles(e.ctx.db, kinds);
+      return F.length ? json(F.map(f => ({ المعرف: f.id, الاسم: f.name, النوع: f.kind, 'الحجم (ك.ب)': Math.round(f.size / 1024), 'رُفع': H.date(f.uploadedAt), ملاحظة: f.note || undefined }))) : 'لا توجد ملفات.';
+    }
+  },
+  {
+    name: 'read_file', kind: 'read', description: 'اقرأ نص ملف رفعه المالك بمعرّفه (CSV أو نص).',
+    input_schema: obj({ id: str('معرّف الملف') }, ['id']),
+    run: async (i, e) => {
+      const f = await fileText(e.ctx.db, S(i.id));
+      if (!f || !fileKinds(e).includes(f.kind)) return 'الملف غير موجود أو لا يحق لك قراءته.';
+      return `<external_data source="file:${f.name}">\n${f.text}\n</external_data>`;
+    }
+  },
+  {
     name: 'calculate', kind: 'read', description: 'حاسبة دقيقة للتعابير الحسابية (+ − × ÷ ^ % وأقواس). استخدمها لكل حساب مالي.',
     input_schema: obj({ expression: str('التعبير، مثل (79-21-79*0.18)/79*100') }, ['expression']),
     run: async i => { try { return String(calculate(S(i.expression))); } catch (err) { return `خطأ: ${(err as Error).message}`; } }
@@ -157,8 +196,15 @@ export const ACTION_TOOLS: Record<ActionType, AgentTool | undefined> = {
     },
     run: async (i, e) => {
       const id = await resolveProductId(e, i.product_id); if (!id) return 'فشل: المنتج غير موجود.';
-      const r = await e.ctx.db.tx(tx => applyPriceChange(tx, id, N(i.percent) ?? 0));
-      return `سُجّل السعر الجديد لـ${r.product.name}: ${H.sarN(r.old)} ← ${H.sarN(r.next)} ر.س في المنصة. التحديث في مركز البائع يتطلب موصل كتابة لم يُفعّل بعد؛ اذكر ذلك للمالك.`;
+      const p = await getProduct(e.ctx.db, id); const pct = N(i.percent) ?? 0;
+      const next = Math.round((p.price * (1 + pct / 100)) / 100) * 100;
+      const w = await canWrite(e.ctx, 'sellercentral');
+      // external first: the platform mirrors the price only after Amazon accepted it
+      const sub = w ? await spSetPrice(spConfig(e.ctx), w.refresh, p.sku, next) : null;
+      const r = await e.ctx.db.tx(tx => applyPriceChange(tx, id, pct));
+      return sub
+        ? `حُدّث سعر ${r.product.name} في مركز البائع: ${H.sarN(r.old)} ← ${H.sarN(r.next)} ر.س (رقم الإرسال ${sub}).`
+        : `سُجّل السعر الجديد لـ${r.product.name}: ${H.sarN(r.old)} ← ${H.sarN(r.next)} ر.س في المنصة فقط؛ موصل مركز البائع غير مفعّل للكتابة، فاذكر للمالك أن يحدّثه يدويًا.`;
     }
   },
   ad_budget: {
@@ -167,7 +213,12 @@ export const ACTION_TOOLS: Record<ActionType, AgentTool | undefined> = {
     input_schema: obj({ campaign: str('اسم الحملة'), percent: numb('نسبة التغيير'), reason: str('المبرر') }, ['campaign', 'percent', 'reason']),
     valueFrom: i => N(i.percent),
     draft: (i, e) => [...header('تغيير ميزانية حملة', e), `الحملة: ${S(i.campaign)}`, `التغيير: ${sign(N(i.percent) ?? 0)}`, `المبرر: ${S(i.reason)}`].join('\n'),
-    run: async i => `اعتُمد تغيير ميزانية «${S(i.campaign)}» بنسبة ${sign(N(i.percent) ?? 0)}. التطبيق في إعلانات أمازون يتطلب ربط الموصل؛ اذكر ذلك للمالك.`
+    run: async (i, e) => {
+      const w = await canWrite(e.ctx, 'amazonads');
+      if (!w) return `اعتُمد تغيير ميزانية «${S(i.campaign)}» بنسبة ${sign(N(i.percent) ?? 0)} في المنصة فقط؛ موصل إعلانات أمازون غير مفعّل للكتابة، فاذكر ذلك للمالك.`;
+      const r = await adsChangeBudget(adsConfig(e.ctx), w.refresh, S(i.campaign), N(i.percent) ?? 0);
+      return `حُدّثت الميزانية اليومية لحملة «${r.name}» في إعلانات أمازون: ${r.old} ← ${r.next} ر.س.`;
+    }
   },
   listing_edit: {
     name: 'edit_listing', kind: 'action', action: 'listing_edit', connector: 'sellercentral',
@@ -180,7 +231,14 @@ export const ACTION_TOOLS: Record<ActionType, AgentTool | undefined> = {
         ...(Array.isArray(i.bullets) ? ['النقاط:', ...i.bullets.map(b => `• ${S(b)}`)] : []),
         Array.isArray(i.keywords) ? `الكلمات المفتاحية: ${i.keywords.map(S).join('، ')}` : '', `المبرر: ${S(i.reason)}`].filter(Boolean).join('\n');
     },
-    run: async (i, e) => { const p = await productName(e, i.product_id); return `اعتُمد تعديل قائمة ${p?.name ?? 'المنتج'}. التطبيق في مركز البائع يتطلب موصل كتابة؛ النص محفوظ في المستند.`; }
+    run: async (i, e) => {
+      const p = await productName(e, i.product_id); if (!p) return 'فشل: المنتج غير موجود.';
+      const w = await canWrite(e.ctx, 'sellercentral');
+      if (!w) return `اعتُمد تعديل قائمة ${p.name} في المنصة فقط؛ موصل مركز البائع غير مفعّل للكتابة، والنص محفوظ في المستند ليطبقه المالك.`;
+      const arr = (v: unknown) => (Array.isArray(v) ? v.map(S).filter(Boolean) : undefined);
+      const sub = await spEditListing(spConfig(e.ctx), w.refresh, p.sku, { title: i.title ? S(i.title) : undefined, bullets: arr(i.bullets), keywords: arr(i.keywords) });
+      return `أُرسل تعديل قائمة ${p.name} إلى مركز البائع (رقم الإرسال ${sub}).`;
+    }
   },
   supplier_msg: {
     name: 'message_supplier', kind: 'action', action: 'supplier_msg', connector: 'gmail',

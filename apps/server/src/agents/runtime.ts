@@ -81,6 +81,32 @@ async function openConnectors(ctx: Ctx, t: TaskRow): Promise<{ tools: AgentTool[
   return { tools, sessions };
 }
 
+/* ---------- web search (Anthropic server tool; read-only, so it needs no gate) ---------- */
+
+/** Available to agents whose department and profile include the «البحث في الويب» tool, unless the owner disabled it. */
+export async function webSearchEnabled(ctx: Ctx, t: Pick<TaskRow, 'dept' | 'agent'>): Promise<boolean> {
+  const org = ctx.org(); const allowed = org.agent(t.agent)?.tools;
+  if (!org.dept(t.dept).tools.includes('websearch') || (allowed && !allowed.includes('websearch'))) return false;
+  const st = (await ctx.db.query(`select state from connectors where tool = 'websearch'`)).rows[0]?.state;
+  return st === 'connected';
+}
+
+/** Dynamic-filtering web search on current models; Haiku 4.5 takes the basic variant. */
+export function webSearchTool(model: string): Anthropic.ToolUnion {
+  return (/haiku/.test(model)
+    ? { type: 'web_search_20250305', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'SA', timezone: 'Asia/Riyadh' } }
+    : { type: 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'SA', timezone: 'Asia/Riyadh' } }) as Anthropic.ToolUnion;
+}
+
+async function logServerTools(ctx: Ctx, env: RunEnv, content: Anthropic.ContentBlock[]): Promise<void> {
+  for (const b of content) {
+    if (b.type !== 'server_tool_use') continue;
+    await ctx.db.query(`insert into tool_calls (task_id, agent, dept, tool, connector, action, input, status) values ($1,$2,$3,$4,'websearch','read',$5,'executed')`,
+      [env.taskId, env.agent, env.dept, b.name, JSON.stringify(b.input ?? {})]);
+  }
+  if (content.some(b => b.type === 'server_tool_use')) await ctx.db.tx(tx => act(tx, env.dept, env.agent, 'read', 'بحث في الويب', { tool: 'websearch' }));
+}
+
 async function assertRunning(ctx: Ctx, signal: AbortSignal): Promise<void> {
   if (signal.aborted) throw new EngineStopped();
   if (!(await company(ctx.db)).running) throw new EngineStopped();
@@ -136,7 +162,8 @@ export async function runTaskAgent(ctx: Ctx, taskId: string, signal: AbortSignal
       [runId, status, JSON.stringify(st), error ?? null]);
 
     // ---- the loop ----
-    const apiTools: Anthropic.Tool[] = tools.map(x => ({ name: x.name, description: x.description, input_schema: x.input_schema }));
+    const apiTools: Anthropic.ToolUnion[] = tools.map(x => ({ name: x.name, description: x.description, input_schema: x.input_schema }));
+    if (await webSearchEnabled(ctx, t)) apiTools.push(webSearchTool(model));
     while (true) {
       await assertRunning(ctx, signal);
       if (st.turns >= ctx.env.AGENT_MAX_TURNS) {
@@ -163,6 +190,7 @@ export async function runTaskAgent(ctx: Ctx, taskId: string, signal: AbortSignal
       if (res.stop_reason === 'max_tokens') { await save('failed', 'max_tokens'); throw new AppError('انقطع رد النموذج لبلوغ حد الرموز'); }
       if (res.stop_reason === 'pause_turn') { await save('running'); continue; }
 
+      await logServerTools(ctx, env, res.content);
       const uses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       if (!uses.length) {
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map(b => b.text).join('\n').trim();

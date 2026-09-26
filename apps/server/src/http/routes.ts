@@ -13,6 +13,7 @@ import * as conn from '../services/connectors.js';
 import * as ops from '../services/ops.js';
 import { ask, greet } from '../services/chat.js';
 import { markBriefRead } from '../services/briefs.js';
+import * as files from '../services/files.js';
 
 const parse = <T>(s: z.ZodType<T>, v: unknown): T => {
   const r = s.safeParse(v ?? {});
@@ -96,6 +97,18 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.post('/api/chat/:dept', async req => ({ reply: await ask(ctx, P(req).dept!, String((req.body as { text?: string })?.text || '')) }));
   app.put('/api/running', async req => { await ops.setRunning(ctx, !!(req.body as { on?: boolean })?.on); return { ok: true }; });
   app.post('/api/briefs/:id/read', async req => { await markBriefRead(ctx, P(req).id!); return { ok: true }; });
+
+  // owner files and imports
+  app.get('/api/files', async () => files.listFiles(ctx.db));
+  app.post('/api/files', { bodyLimit: 15 * 1024 * 1024 }, async req => files.uploadFile(ctx, parse(z.object({ name: z.string().min(1).max(200),
+    mime: z.string().max(100).optional(), dataBase64: z.string().min(1), kind: z.enum(['upload', 'bank', 'rates']).optional(), note: z.string().max(500).optional() }), req.body)));
+  app.get('/api/files/:id/download', async (req, reply) => {
+    const f = await files.downloadFile(ctx.db, P(req).id!);
+    reply.header('content-type', f.mime).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`);
+    return reply.send(f.data);
+  });
+  app.delete('/api/files/:id', async req => { await files.deleteFile(ctx, P(req).id!); return { ok: true }; });
+  app.post('/api/files/:id/import-bank', async req => files.importBankStatement(ctx, P(req).id!));
 
   // audit trail of tool calls (spec §20)
   app.get('/api/tool-calls', async req => {

@@ -8,6 +8,7 @@ import { newId } from '../core/ids.js';
 import { toConnector } from '../repo/rows.js';
 import { testMcp } from '../connectors/mcp.js';
 import { spConfigured, spSyncToday, spTest, type SpApiConfig } from '../connectors/spapi.js';
+import { adsCampaigns, adsConfigured, adsTest, type AdsConfig } from '../connectors/amazonads.js';
 import { audit, emitKpi, setKpiDay } from './common.js';
 
 type Row = { tool: string; state: string; log: ConnectorStatus['log'] };
@@ -23,6 +24,12 @@ export async function ensureConnectorRows(ctx: Ctx, tx: Queryable): Promise<void
   for (const t of ctx.org().tools) {
     await tx.query(`insert into connectors (tool, state, scopes, auth) values ($1,$2,$3,$4) on conflict (tool) do nothing`,
       [t.id, initialState(t), 'read', t.m === 'mcp' ? 'oauth' : t.m === 'api' ? 'key' : 'none']);
+  }
+  // web search is provided by the model API itself: available whenever a model key is configured
+  if (ctx.env.ANTHROPIC_API_KEY) {
+    const r = await tx.query(`update connectors set state = 'connected', auth = 'none', last_error = '' where tool = 'websearch' and state = 'needs_auth' returning tool`);
+    if (r.rowCount) await tx.query(`update connectors set log = $1 where tool = 'websearch'`,
+      [JSON.stringify([{ at: Date.now(), level: 'ok', text: 'البحث في الويب مزوَّد عبر واجهة Claude (أداة خادم)؛ لا يحتاج مفتاحًا منفصلًا' }])]);
   }
 }
 
@@ -49,7 +56,37 @@ async function emitConnectors(ctx: Ctx, tx: Tx): Promise<void> { tx.emit({ type:
 export const secretId = (tool: string) => `conn:${tool}`;
 
 export function spConfig(ctx: Ctx): SpApiConfig {
-  return { clientId: ctx.env.SPAPI_CLIENT_ID, clientSecret: ctx.env.SPAPI_CLIENT_SECRET, endpoint: ctx.env.SPAPI_ENDPOINT, marketplaceId: ctx.env.SPAPI_MARKETPLACE_ID };
+  return { clientId: ctx.env.SPAPI_CLIENT_ID, clientSecret: ctx.env.SPAPI_CLIENT_SECRET, endpoint: ctx.env.SPAPI_ENDPOINT, marketplaceId: ctx.env.SPAPI_MARKETPLACE_ID,
+    sellerId: ctx.env.SPAPI_SELLER_ID, language: ctx.env.SPAPI_LANGUAGE };
+}
+export function adsConfig(ctx: Ctx): AdsConfig {
+  return { clientId: ctx.env.ADS_CLIENT_ID, clientSecret: ctx.env.ADS_CLIENT_SECRET, endpoint: ctx.env.ADS_ENDPOINT, profileId: ctx.env.ADS_PROFILE_ID };
+}
+export async function adsRefresh(ctx: Ctx, db: Queryable): Promise<string | null> {
+  return (await ctx.vault.get(db, secretId('amazonads'))) || ctx.env.ADS_REFRESH_TOKEN || null;
+}
+
+/** A native connector may act only when it is connected AND the owner granted it write scope. */
+export async function canWrite(ctx: Ctx, tool: 'sellercentral' | 'amazonads'): Promise<{ refresh: string } | null> {
+  const r = (await ctx.db.query('select state, scopes, url from connectors where tool = $1', [tool])).rows[0];
+  if (!r || r.state !== 'connected' || r.scopes !== 'write' || r.url) return null;
+  if (tool === 'sellercentral') { const rt = await spRefresh(ctx, ctx.db); return rt && spConfigured(spConfig(ctx), rt) && ctx.env.SPAPI_SELLER_ID ? { refresh: rt } : null; }
+  const rt = await adsRefresh(ctx, ctx.db); return rt && adsConfigured(adsConfig(ctx), rt) ? { refresh: rt } : null;
+}
+export async function canRead(ctx: Ctx, tool: 'amazonads'): Promise<{ refresh: string } | null> {
+  const r = (await ctx.db.query('select state, url from connectors where tool = $1', [tool])).rows[0];
+  if (!r || r.state !== 'connected' || r.url) return null;
+  const rt = await adsRefresh(ctx, ctx.db); return rt && adsConfigured(adsConfig(ctx), rt) ? { refresh: rt } : null;
+}
+
+/** Active campaigns → «حملات نشطة» card metric. */
+export async function syncAds(ctx: Ctx): Promise<number> {
+  const a = await canRead(ctx, 'amazonads'); if (!a) return 0;
+  const all = await adsCampaigns(adsConfig(ctx), a.refresh);
+  const active = all.filter(x => x.state === 'ENABLED').length;
+  await ctx.db.query(`insert into metrics_base (dept, v0) values ('marketing', $1) on conflict (dept) do update set v0 = excluded.v0`, [active]);
+  ctx.refreshMetrics();
+  return active;
 }
 export async function spRefresh(ctx: Ctx, db: Queryable): Promise<string | null> {
   return (await ctx.vault.get(db, secretId('sellercentral'))) || ctx.env.SPAPI_REFRESH_TOKEN || null;
@@ -62,6 +99,11 @@ async function realTest(ctx: Ctx, id: string): Promise<{ ok: boolean; latency: n
     const rt = await spRefresh(ctx, ctx.db);
     if (!spConfigured(spConfig(ctx), rt)) return { ok: false, latency: 0, error: 'اضبط SPAPI_CLIENT_ID وSPAPI_CLIENT_SECRET في الخادم، والصق رمز التحديث كمفتاح' };
     return spTest(spConfig(ctx), rt!);
+  }
+  if (id === 'amazonads' && !row?.url) {
+    const rt = await adsRefresh(ctx, ctx.db);
+    if (!adsConfigured(adsConfig(ctx), rt)) return { ok: false, latency: 0, error: 'اضبط ADS_CLIENT_ID وADS_CLIENT_SECRET وADS_PROFILE_ID في الخادم، والصق رمز التحديث كمفتاح' };
+    return adsTest(adsConfig(ctx), rt!);
   }
   if (row?.url) return testMcp(row.url, await ctx.vault.get(ctx.db, secretId(id)));
   return null;
@@ -114,6 +156,7 @@ export async function connectorAction(ctx: Ctx, id: string, action: string, p: C
     await report(ctx, id, r);
   } else if (action === 'sync') {
     if (id === 'sellercentral') await syncSellerCentral(ctx);
+    else if (id === 'amazonads') { const n = await syncAds(ctx); await report(ctx, id, { ok: true, latency: 0, note: `مزامنة: ${n} حملة نشطة` }); }
     else await ctx.db.tx(async tx => { await tx.query('update connectors set last_sync = now() where tool = $1', [id]); await log(tx, id, 'ok', 'مزامنة يدوية'); await emitConnectors(ctx, tx); });
   } else if (['disable', 'enable', 'disconnect', 'scopes'].includes(action)) {
     await ctx.db.tx(async tx => {

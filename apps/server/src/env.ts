@@ -35,6 +35,20 @@ const schema = z.object({
   SPAPI_ENDPOINT: z.string().url().default('https://sellingpartnerapi-eu.amazon.com'),
   SPAPI_MARKETPLACE_ID: z.string().default('A17E79C6D8DWNP'),
   SPAPI_SYNC_MINUTES: z.coerce.number().int().min(5).default(15),
+  /** Merchant token (Seller Central → Settings → Account info); required for listing writes */
+  SPAPI_SELLER_ID: z.string().optional().default(''),
+  SPAPI_LANGUAGE: z.string().default('ar_AE'),
+
+  ADS_CLIENT_ID: z.string().optional().default(''),
+  ADS_CLIENT_SECRET: z.string().optional().default(''),
+  ADS_REFRESH_TOKEN: z.string().optional().default(''),
+  ADS_PROFILE_ID: z.string().optional().default(''),
+  ADS_ENDPOINT: z.string().url().default('https://advertising-api-eu.amazon.com'),
+
+  /** memory (single instance) | pg (LISTEN/NOTIFY across instances) */
+  EVENT_BUS: z.enum(['memory', 'pg']).default('memory'),
+  /** public origin used for OAuth redirects, e.g. https://agents.example.com */
+  PUBLIC_URL: z.string().optional().default(''),
 
   /** disables the scheduler/executor (used by tests and one-off CLI commands) */
   ENGINE_DISABLED: bool
