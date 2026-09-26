@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { finish, makeApp, toolUse } from './helpers.js';
 import * as tasks from '../src/services/tasks.js';
@@ -14,6 +15,7 @@ const realFetch = globalThis.fetch;
 /* A fake Amazon: LWA, SP-API Listings, Ads API. Records every call. */
 const amazonCalls: { method: string; url: string; body: unknown }[] = [];
 let listingsStatus: 'ACCEPTED' | 'INVALID' = 'ACCEPTED';
+let reportCalls = 0; let reportDone = false;
 const campaigns = [{ campaignId: '111', name: 'حملة منظم الأدراج', state: 'ENABLED', budget: { budget: 100, budgetType: 'DAILY' } },
   { campaignId: '222', name: 'حملة الحقيبة', state: 'PAUSED', budget: { budget: 50, budgetType: 'DAILY' } }];
 function fakeAmazon(input: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -29,6 +31,9 @@ function fakeAmazon(input: string | URL | Request, init?: RequestInit): Promise<
   if (url.includes('/sp/campaigns/list')) return json({ campaigns });
   if (url.endsWith('/sp/campaigns') && init?.method === 'PUT') return json({ campaigns: { success: [{ campaignId: '111' }], error: [] } });
   if (url.includes('/v2/profiles')) return json([{ profileId: 999, countryCode: 'SA' }]);
+  if (url.endsWith('/reporting/reports') && init?.method === 'POST') return reportCalls++ === 0 ? json({ reportId: 'rep-1', status: 'PENDING' }) : json({ code: '425', detail: 'The Request is a duplicate of : rep-1' }, 425);
+  if (url.includes('/reporting/reports/rep-1')) return json(reportDone ? { status: 'COMPLETED', url: 'https://offline-report-storage.amazon.com/rep-1.json.gz' } : { status: 'PENDING' });
+  if (url.includes('offline-report-storage')) return Promise.resolve(new Response(gzipSync(JSON.stringify([{ campaignId: '111', cost: 120.5 }, { campaignId: '222', cost: 30 }]))));
   return json({ errors: [{ message: 'not mocked' }] }, 404);
 }
 
@@ -185,5 +190,20 @@ describe('Amazon Ads writes', () => {
     const { syncAds } = await import('../src/services/connectors.js');
     expect(await syncAds(A.ctx)).toBe(1);
     expect((await A.ctx.db.query(`select v0 from metrics_base where dept = 'marketing'`)).rows[0].v0).toBe(1);
+  });
+});
+
+describe('Amazon Ads daily spend', () => {
+  it('requests the report, waits, then books the spend into today\'s KPI', async () => {
+    const { pollAdSpend, resetAdSpendState } = await import('../src/services/connectors.js');
+    const { kpi } = await import('../src/services/common.js');
+    resetAdSpendState();
+    expect(await pollAdSpend(A.ctx)).toBe('requested');
+    expect(await pollAdSpend(A.ctx)).toBe('waiting');
+    reportDone = true;
+    expect(await pollAdSpend(A.ctx)).toBe('booked');
+    expect((await kpi(A.ctx.db)).adSpendToday).toBe(15050);
+    expect(await pollAdSpend(A.ctx)).toBe('idle'); // at most hourly
+    expect(await pollAdSpend(A.ctx, Date.now() + 3_700_000)).toBe('requested'); // duplicate request resolves to the same report id
   });
 });

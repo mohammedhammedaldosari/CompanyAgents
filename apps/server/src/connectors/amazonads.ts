@@ -16,8 +16,8 @@ async function call<T>(c: AdsConfig, refresh: string, method: string, p: string,
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30_000)
   }));
-  const j = (await r.json().catch(() => ({}))) as T & { message?: string; details?: string };
-  if (!r.ok) throw new Error(`إعلانات أمازون ${r.status}: ${j.message || j.details || ''}`.trim());
+  const j = (await r.json().catch(() => ({}))) as T & { message?: string; details?: string; detail?: string };
+  if (!r.ok) throw new Error(`إعلانات أمازون ${r.status}: ${j.message || j.detail || j.details || ''}`.trim());
   return j;
 }
 
@@ -55,4 +55,36 @@ export async function adsChangeBudget(c: AdsConfig, refresh: string, campaign: s
   const err = r.campaigns?.error?.[0]?.errors?.[0]?.errorValue?.message;
   if (err) throw new Error(`رفضت إعلانات أمازون التعديل: ${err}`);
   return { name: hit.name, old: hit.budget, next };
+}
+
+/* ---------- daily spend (Reporting API v3, asynchronous) ---------- */
+
+const REPORT = 'application/vnd.createasyncreportrequest.v3+json';
+
+/** Requests today's Sponsored Products spend; a duplicate request returns the existing report id. */
+export async function adsRequestSpend(c: AdsConfig, refresh: string, day: string): Promise<string> {
+  try {
+    const r = await call<{ reportId: string }>(c, refresh, 'POST', '/reporting/reports', {
+      name: `agents-company spend ${day}`, startDate: day, endDate: day,
+      configuration: { adProduct: 'SPONSORED_PRODUCTS', groupBy: ['campaign'], columns: ['campaignId', 'cost'], reportTypeId: 'spCampaigns', timeUnit: 'SUMMARY', format: 'GZIP_JSON' }
+    }, REPORT);
+    return r.reportId;
+  } catch (e) {
+    const m = /duplicate of\s*:?\s*([\w-]+)/i.exec((e as Error).message);
+    if (m) return m[1]!;
+    throw e;
+  }
+}
+
+export async function adsReportStatus(c: AdsConfig, refresh: string, id: string): Promise<{ status: string; url?: string; failureReason?: string }> {
+  return call(c, refresh, 'GET', `/reporting/reports/${encodeURIComponent(id)}`, undefined, 'application/json');
+}
+
+/** Downloads a completed report (pre-signed URL, no auth headers) and sums the cost, in halalas. */
+export async function adsReportCost(url: string): Promise<number> {
+  const { gunzipSync } = await import('node:zlib');
+  const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  if (!r.ok) throw new Error(`تعذّر تنزيل تقرير الإعلانات (${r.status})`);
+  const rows = JSON.parse(gunzipSync(Buffer.from(await r.arrayBuffer())).toString('utf8')) as { cost?: number }[];
+  return Math.round(rows.reduce((s, x) => s + (Number(x.cost) || 0), 0) * 100);
 }

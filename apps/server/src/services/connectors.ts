@@ -14,7 +14,7 @@ export async function mcpAuthFor(ctx: Ctx, tool: string, auth: string): Promise<
   return auth === 'oauth' ? new VaultOAuthProvider(ctx, tool) : ctx.vault.get(ctx.db, secretId(tool));
 }
 import { spConfigured, spSyncToday, spTest, type SpApiConfig } from '../connectors/spapi.js';
-import { adsCampaigns, adsConfigured, adsTest, type AdsConfig } from '../connectors/amazonads.js';
+import { adsCampaigns, adsConfigured, adsReportCost, adsReportStatus, adsRequestSpend, adsTest, type AdsConfig } from '../connectors/amazonads.js';
 import { audit, emitKpi, setKpiDay } from './common.js';
 
 type Row = { tool: string; state: string; log: ConnectorStatus['log'] };
@@ -243,6 +243,32 @@ export async function removeConnector(ctx: Ctx, id: string): Promise<void> {
     await audit(tx, 'الموصلات', 'حذف موصل', t.name); await emitConnectors(ctx, tx);
   });
 }
+
+/* ---------- Ads daily spend → «الإنفاق الإعلاني» ---------- */
+
+let pendingSpend: { id: string; day: string; since: number } | null = null;
+
+/** Called every minute: requests today's spend report at most hourly, and books the cost once the report completes. */
+export async function pollAdSpend(ctx: Ctx, now = Date.now(), everyMs = 3_600_000): Promise<'requested' | 'waiting' | 'booked' | 'idle'> {
+  const a = await canRead(ctx, 'amazonads'); if (!a) return 'idle';
+  const day = H.isoDay(now);
+  if (!pendingSpend || pendingSpend.day !== day) {
+    const last = lastSpendAt.get(day) ?? 0;
+    if (now - last < everyMs) return 'idle';
+    pendingSpend = { id: await adsRequestSpend(adsConfig(ctx), a.refresh, day), day, since: now };
+    return 'requested';
+  }
+  const st = await adsReportStatus(adsConfig(ctx), a.refresh, pendingSpend.id);
+  if (st.status === 'FAILED') { pendingSpend = null; throw new Error(`فشل تقرير الإعلانات: ${st.failureReason ?? ''}`); }
+  if (st.status !== 'COMPLETED' || !st.url) { if (now - pendingSpend.since > 3 * 3_600_000) pendingSpend = null; return 'waiting'; }
+  const cost = await adsReportCost(st.url);
+  const booked = pendingSpend.day; pendingSpend = null; lastSpendAt.set(booked, now);
+  await ctx.db.tx(async tx => { await setKpiDay(tx, now, { ad_spend: cost }); await emitKpi(tx); });
+  ctx.refreshMetrics();
+  return 'booked';
+}
+const lastSpendAt = new Map<string, number>();
+export const resetAdSpendState = () => { pendingSpend = null; lastSpendAt.clear(); };
 
 /* ---------- Seller Central sync (orders + FBA stock) ---------- */
 

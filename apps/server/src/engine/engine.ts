@@ -9,7 +9,7 @@ import { issueBrief } from '../services/briefs.js';
 import { ensureRoutines } from '../services/routines.js';
 import { markFailed, routeTask, startTask } from '../services/tasks.js';
 import { overCap } from '../services/usage.js';
-import { spConfig, spRefresh, syncAds, syncSellerCentral } from '../services/connectors.js';
+import { pollAdSpend, spConfig, spRefresh, syncAds, syncSellerCentral } from '../services/connectors.js';
 import { spConfigured } from '../connectors/spapi.js';
 import { EngineStopped, NotConfigured, runTaskAgent } from '../agents/runtime.js';
 
@@ -145,6 +145,7 @@ export class Engine implements Jobs {
       }
       await syncAds(ctx).catch(e => ctx.log.warn({ err: e }, 'ads sync'));
     }
+    await pollAdSpend(ctx).catch(e => ctx.log.warn({ err: e }, 'ads spend'));
     ctx.refreshMetrics();
   }
 }
