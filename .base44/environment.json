@@ -1,0 +1,58 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "MASTER_KEY",
+      "description": "Encryption key for the connector vault (openssl rand -base64 32). Required at boot — a dev placeholder is generated automatically.",
+      "requiredAtBoot": true,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "Anthropic API key for the Claude AI agents. Without it the app boots but agent tasks fail. Get it from https://console.anthropic.com/settings/keys.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SPAPI_CLIENT_ID",
+      "description": "Amazon SP-API client ID (Seller Central → Settings → Authorization). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SPAPI_CLIENT_SECRET",
+      "description": "Amazon SP-API client secret. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SPAPI_REFRESH_TOKEN",
+      "description": "Amazon SP-API refresh token (paste in admin panel or set here). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SPAPI_SELLER_ID",
+      "description": "Amazon Seller Central merchant token (for listing/price writes). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADS_CLIENT_ID",
+      "description": "Amazon Ads API client ID. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADS_CLIENT_SECRET",
+      "description": "Amazon Ads API client secret. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADS_REFRESH_TOKEN",
+      "description": "Amazon Ads API refresh token. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "ADS_PROFILE_ID",
+      "description": "Amazon Ads API profile ID. Optional.",
+      "requiredAtBoot": false
+    }
+  ]
+}

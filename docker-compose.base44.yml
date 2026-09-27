@@ -1,0 +1,63 @@
+# Base44 dev environment — runs the app from bind-mounted source with live reload.
+# Usage: docker compose -f docker-compose.base44.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agents
+      POSTGRES_PASSWORD: agents_dev_pw
+      POSTGRES_DB: agents
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents"]
+      interval: 5s
+      retries: 10
+
+  # One-shot: install workspace deps and build the shared domain package.
+  setup:
+    image: node:22-alpine
+    working_dir: /repo
+    volumes:
+      - ./:/repo
+      - pnpm_store:/root/.local/share/pnpm/store
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @agents/domain build"
+
+  server:
+    image: node:22-alpine
+    working_dir: /repo
+    depends_on:
+      db: { condition: service_healthy }
+      setup: { condition: service_completed_successfully }
+    volumes:
+      - ./:/repo
+      - pnpm_store:/root/.local/share/pnpm/store
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    environment:
+      - DATABASE_URL=postgres://agents:agents_dev_pw@db:5432/agents
+      - HOST=0.0.0.0
+      - PORT=8080
+      - TZ=Asia/Riyadh
+    command: sh -c "corepack enable && pnpm --filter @agents/server migrate && pnpm --filter @agents/server dev"
+
+  web:
+    image: node:22-alpine
+    working_dir: /repo
+    depends_on:
+      setup: { condition: service_completed_successfully }
+    volumes:
+      - ./:/repo
+      - pnpm_store:/root/.local/share/pnpm/store
+    environment:
+      - VITE_PROXY_TARGET=http://server:8080
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    ports:
+      - "3000:5173"
+    command: sh -c "corepack enable && pnpm --filter @agents/web dev"
+
+volumes:
+  pgdata:
+  pnpm_store:
