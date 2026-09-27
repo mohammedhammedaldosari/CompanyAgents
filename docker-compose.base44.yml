@@ -1,0 +1,93 @@
+# Base44 development environment — runs the monorepo from bind-mounted source with live reload.
+# Usage: docker compose -f docker-compose.base44.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_USER: agents
+      POSTGRES_PASSWORD: agents
+      POSTGRES_DB: agents
+      TZ: Asia/Riyadh
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  setup:
+    image: node:22-alpine
+    working_dir: /app
+    restart: "no"
+    environment:
+      - COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+      - DATABASE_URL=postgres://agents:agents@db:5432/agents
+      - ENGINE_DISABLED=true
+      - TZ=Asia/Riyadh
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @agents/domain build && pnpm --filter @agents/server cli migrate && pnpm --filter @agents/server cli seed-demo"
+
+  server:
+    image: node:22-alpine
+    working_dir: /app
+    restart: on-failure
+    environment:
+      - COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+      - DATABASE_URL=postgres://agents:agents@db:5432/agents
+      - TZ=Asia/Riyadh
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm
+    depends_on:
+      db:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    command: sh -c "corepack enable && pnpm --filter @agents/server dev"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    restart: on-failure
+    environment:
+      - COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+      - VITE_PROXY_TARGET=http://server:8080
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    ports:
+      - "3000:5173"
+    command: sh -c "corepack enable && pnpm --filter @agents/web dev"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  pgdata:
+  pnpm-store:

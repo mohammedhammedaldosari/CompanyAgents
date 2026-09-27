@@ -1,0 +1,18 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "MASTER_KEY",
+      "description": "مفتاح تشفير خزنة مفاتيح الموصلات — أنشئه بـ openssl rand -base64 32. فقدانه يعني فقدان المفاتيح المخزنة.",
+      "requiredAtBoot": true,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "مفتاح Anthropic API لتشغيل وكلاء Claude — احصل عليه من console.anthropic.com. بدونه تعمل الواجهة والمحادثة من البيانات فقط، والمهام تفشل.",
+      "requiredAtBoot": false
+    }
+  ]
+}
