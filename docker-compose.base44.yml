@@ -35,7 +35,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @agents/domain build && pnpm --filter @agents/server cli migrate && pnpm --filter @agents/server cli seed-demo"
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @agents/domain build && pnpm --filter @agents/server cli migrate && (pnpm --filter @agents/server cli seed-demo || true)"
 
   server:
     image: node:22-alpine
